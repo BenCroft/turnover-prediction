@@ -1,0 +1,1026 @@
+
+
+
+
+# I. Setup Environment
+
+## A. Load libraries
+
+```{r}
+suppressMessages(library(haven))
+suppressMessages(library(tidyverse))
+suppressMessages(library(rsample))
+suppressMessages(library(caret))
+suppressMessages(library(rpart))
+suppressMessages(library(RANN))
+suppressMessages(library(e1071))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(rattle))
+suppressMessages(library(mice))
+suppressMessages(library(pROC))
+suppressMessages(library(plotROC))
+suppressMessages(library(corrplot))
+suppressMessages(library(reshape2))
+suppressMessages(library(factoextra))
+suppressMessages(library(cluster))
+suppressMessages(library(fpc))
+suppressMessages(library(pipelearner))
+suppressMessages(library(parallel))
+suppressMessages(library(mlr))
+suppressMessages(library(parallelMap))
+suppressMessages(library(ROCR))
+suppressMessages(library(data.table))
+suppressMessages(library(xgboost))
+suppressMessages(library(xgboostExplainer))
+```
+
+```{r}
+seed = 40
+```
+
+
+## B. XGBoost Simple Code
+
+```{r}
+# Default params
+# params <- list(objective = "binary:logistic",
+#                eta = 0.01, # learning rate, step size
+#                gamma = 5, # controls regularization
+#                max_depth = 10, # depth of the model; higher coudl be more overfit
+#                subsample = 0.5, # number of observations supplied to a tree
+#                colsample_bytree = 1 # number of features supplied to a tree
+# )
+```
+
+
+```{r}
+# start_time <- Sys.time()
+
+# xgb <- xgb.cv(params = params,
+#               data = train_X,
+#               label = train_y,
+#               nfold = 3,
+#               nround = 100, # number of trees to grow
+#               seed = 1,
+#               eval_metric = auc,
+#               #nthread = 2, #default is maximum
+#               early_stopping_rounds = 5,
+#               metrics = list("auc", "error"),
+#               booster = "gbtree")
+# 
+# end_time <- Sys.time()
+# end_time - start_time
+```
+
+```{r}
+# xgb$evaluation_log
+```
+
+```{r}
+# y_pred <- predict(xgb, newdata = test_X)
+# 
+# err <- mean(as.numeric(y_pred > 0.5) != test_y)
+# print(paste0("Test-error  = ", err))
+# #print(paste0("Train-error = ", min(xgb$evaluation_log$train_error)))
+# 
+# roc_test <- roc(test_y[,1], y_pred)
+# 
+# plot(roc_test)
+```
+
+
+
+
+
+
+
+# *******************************************
+
+# II. Model for Type 2
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Data/data_type2.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+## B. XGBoost - Advanced
+
+### 1. Select hyperparameters
+
+```{r}
+# Create tasks
+traintask <- makeClassifTask(data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.xgboost", predict.type = "prob")
+
+lrn$par.vals <- list(booster      = "gbtree",
+                     objective    = "binary:logistic",
+                     eval_metric  = "auc",
+                     nrounds      = 500, # number of trees to grow
+                     missing      = "NA",
+                     #nthread      = 2, # cores to use - default is maximum
+                     early_stopping_rounds = 10,
+                     tree_methods = "hist", 
+                     min_child_weight = 1L, 
+                     subsample = 0.75, # number of observations supplied to a tree
+                     colsample_bytree = 1L # number of features supplied to a tree
+                     )
+
+# Set parameter space
+params <- makeParamSet(makeDiscreteParam("max_depth", values = c(8, 12)), # depth of the model; higher coudl be more overfit
+                       makeDiscreteParam("gamma", values = c(5)),
+                       makeDiscreteParam("eta", values = c(0.01))) # learning rate, step size) 
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+```
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+xgb_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+xgmodel <- train(learner = xgb_tuned_learner,
+                 task = traintask)
+
+# predict model
+xgpred <- predict(xgmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(xgpred$data$response, xgpred$data$truth)
+performance
+```
+
+
+
+
+
+```{r}
+roc(as.numeric(xgpred$data$response), as.numeric(xgpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+### 4. Variable Importance
+
+```{r}
+importance <- xgb.importance(dimnames(train_df)[[2]], model = xgmodel$learner.model)
+
+(importance) 
+```
+
+
+```{r}
+write.csv(importance, "importance_2_xgboost.csv")
+```
+
+
+
+
+
+
+
+
+# *******************************************
+
+# III. Model for Type 3
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Data/data_type3.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+## B. XGBoost - Advanced
+
+### 1. Select hyperparameters
+
+```{r}
+# Create tasks
+traintask <- makeClassifTask(data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.xgboost", predict.type = "prob")
+
+lrn$par.vals <- list(booster      = "gbtree",
+                     objective    = "binary:logistic",
+                     eval_metric  = "auc",
+                     nrounds      = 500, # number of trees to grow
+                     missing      = "NA",
+                     #nthread      = 2, # cores to use - default is maximum
+                     early_stopping_rounds = 10,
+                     tree_methods = "hist", 
+                     min_child_weight = 1L, 
+                     subsample = 0.75, # number of observations supplied to a tree
+                     colsample_bytree = 1L # number of features supplied to a tree
+                     )
+
+# Set parameter space
+params <- makeParamSet(makeDiscreteParam("max_depth", values = c(8, 12)), # depth of the model; higher coudl be more overfit
+                       makeDiscreteParam("gamma", values = c(5)),
+                       makeDiscreteParam("eta", values = c(0.01))) # learning rate, step size) 
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+```
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+xgb_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+xgmodel <- train(learner = xgb_tuned_learner,
+                 task = traintask)
+
+# predict model
+xgpred <- predict(xgmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(xgpred$data$response, xgpred$data$truth)
+performance
+```
+
+
+
+
+
+```{r}
+roc(as.numeric(xgpred$data$response), as.numeric(xgpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+### 4. Variable Importance
+
+```{r}
+importance <- xgb.importance(dimnames(train_df)[[2]], model = xgmodel$learner.model)
+
+(importance) 
+```
+
+
+```{r}
+write.csv(importance, "importance_3_xgboost.csv")
+```
+
+
+
+# *******************************************
+
+# III. Model for Type 4
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Data/data_type4.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+## B. XGBoost - Advanced
+
+### 1. Select hyperparameters
+
+```{r}
+# Create tasks
+traintask <- makeClassifTask(data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.xgboost", predict.type = "prob")
+
+lrn$par.vals <- list(booster      = "gbtree",
+                     objective    = "binary:logistic",
+                     eval_metric  = "auc",
+                     nrounds      = 500, # number of trees to grow
+                     missing      = "NA",
+                     #nthread      = 2, # cores to use - default is maximum
+                     early_stopping_rounds = 10,
+                     tree_methods = "hist", 
+                     min_child_weight = 1L, 
+                     subsample = 0.75, # number of observations supplied to a tree
+                     colsample_bytree = 1L # number of features supplied to a tree
+                     )
+
+# Set parameter space
+params <- makeParamSet(makeDiscreteParam("max_depth", values = c(8, 12)), # depth of the model; higher coudl be more overfit
+                       makeDiscreteParam("gamma", values = c(5)),
+                       makeDiscreteParam("eta", values = c(0.01))) # learning rate, step size) 
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+```
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+xgb_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+xgmodel <- train(learner = xgb_tuned_learner,
+                 task = traintask)
+
+# predict model
+xgpred <- predict(xgmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(xgpred$data$response, xgpred$data$truth)
+performance
+```
+
+
+
+
+
+```{r}
+roc(as.numeric(xgpred$data$response), as.numeric(xgpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+### 4. Variable Importance
+
+```{r}
+importance <- xgb.importance(dimnames(train_df)[[2]], model = xgmodel$learner.model)
+
+(importance) 
+```
+
+
+```{r}
+write.csv(importance, "importance_4_xgboost.csv")
+```
+
+
+
+
+# *******************************************
+
+# III. Model for Type All
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Data/data_typeALL.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+## B. XGBoost - Advanced
+
+### 1. Select hyperparameters
+
+```{r}
+# Create tasks
+traintask <- makeClassifTask(data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.xgboost", predict.type = "prob")
+
+lrn$par.vals <- list(booster      = "gbtree",
+                     objective    = "binary:logistic",
+                     eval_metric  = "auc",
+                     nrounds      = 500, # number of trees to grow
+                     missing      = "NA",
+                     #nthread      = 2, # cores to use - default is maximum
+                     early_stopping_rounds = 10,
+                     tree_methods = "hist", 
+                     min_child_weight = 1L, 
+                     subsample = 0.75, # number of observations supplied to a tree
+                     colsample_bytree = 1L # number of features supplied to a tree
+                     )
+
+# Set parameter space
+params <- makeParamSet(makeDiscreteParam("max_depth", values = c(10)), # depth of the model; higher coudl be more overfit
+                       makeDiscreteParam("gamma", values = c(1, 5)),
+                       makeDiscreteParam("eta", values = c(0.01, 0.1))) # learning rate, step size) 
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+```
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+xgb_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+xgmodel <- train(learner = xgb_tuned_learner,
+                 task = traintask)
+
+# predict model
+xgpred <- predict(xgmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(xgpred$data$response, xgpred$data$truth)
+performance
+```
+
+
+
+
+
+```{r}
+roc(as.numeric(xgpred$data$response), as.numeric(xgpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+### 4. Variable Importance
+
+```{r}
+importance <- xgb.importance(dimnames(train_df)[[2]], model = xgmodel$learner.model)
+
+(importance) 
+```
+
+
+```{r}
+write.csv(importance, "importance_all_xgboost.csv")
+```
+
+
+

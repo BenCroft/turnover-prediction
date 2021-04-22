@@ -1,0 +1,232 @@
+
+
+# CART ANALYSIS
+
+# ****************************************
+
+```{}
+Tips:
+https://rstudio-pubs-static.s3.amazonaws.com/442284_82321e66af4e49d58adcd897e00bf495.html
+https://mlr.mlr-org.com/articles/tutorial/measures.html
+```
+
+
+```{r}
+#install.packages("xgboost")
+```
+
+
+# I. Setup Environment
+
+## A. Load libraries
+
+```{r}
+suppressMessages(library(haven))
+suppressMessages(library(tidyverse))
+suppressMessages(library(rsample))
+suppressMessages(library(caret))
+suppressMessages(library(rpart))
+suppressMessages(library(RANN))
+suppressMessages(library(e1071))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(rattle))
+suppressMessages(library(mice))
+suppressMessages(library(pROC))
+suppressMessages(library(plotROC))
+suppressMessages(library(corrplot))
+suppressMessages(library(reshape2))
+suppressMessages(library(factoextra))
+suppressMessages(library(cluster))
+suppressMessages(library(fpc))
+suppressMessages(library(pipelearner))
+suppressMessages(library(parallel))
+suppressMessages(library(mlr))
+suppressMessages(library(parallelMap))
+suppressMessages(library(ROCR))
+suppressMessages(library(data.table))
+suppressMessages(library(xgboost))
+suppressMessages(library(xgboostExplainer))
+```
+
+```{r}
+seed = 40
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ****************************
+
+# II. 2018
+
+## A. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data_read2 <- read_sav("./Input Data/2018FEVS CART-DV as Categorical Data.sav")
+```
+
+## B. Process data
+
+```{r}
+# Process data
+data <- data_read2 %>%
+  mutate(Turnover_Category = as.factor(Turnover_Category),
+         Turnover_Binary = as.factor(Turnover_Binary),
+         Gender = as.factor(Gender),
+         EduAttain = as.factor(EduAttain),
+         OrgTenure = as.factor(OrgTenure),
+         Supervisory = as.factor(Supervisory),
+         Minority = as.factor(Minority)) %>%
+  mutate(POSTWT = as.numeric(POSTWT)) %>%
+  filter(!is.na(Turnover_Category)) %>%
+  filter(!is.na(Turnover_Binary)) # Filter out any responses where the outcome is unknown
+```
+
+
+## C. Separate data by Turnover Intention
+
+```{r}
+table(data$Turnover_Category, data$Turnover_Binary)
+```
+
+```{r}
+data_type2 <- data %>%
+  filter(Turnover_Category %in% c(1, 2))
+  
+
+data_type3 <- data %>%
+  filter(Turnover_Category %in% c(1, 3))
+  
+
+data_type4 <- data %>%
+  filter(Turnover_Category %in% c(1, 4))
+```
+
+
+
+```{r}
+write.csv(data, "./Input Data/data_typeAll.csv")
+write.csv(data_type2, "./Input Data/data_type2.csv")
+write.csv(data_type3, "./Input Data/data_type3.csv")
+write.csv(data_type4, "./Input Data/data_type4.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ******************************
+
+# II. 2017
+
+## A. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data_read_2017 <- read_sav("./Input Data/FEVS2017_cleanedBEN.sav")
+```
+
+
+
+## B. Process data
+
+```{r}
+# Process data
+data_2017 <- data_read_2017 %>%
+  mutate(Turnover_B = as.factor(Turnover_B),
+         Gender = as.factor(Gender),
+         EduAttain = as.factor(EduAttain),
+         OrgTenure = as.factor(OrgTenure),
+         Supervisory = as.factor(Supervisory),
+         Minority = as.factor(Minority)) %>%
+  mutate(POSTWT = as.numeric(POSTWT)) %>%
+  filter(!is.na(Turnover_B)) # Filter out any responses where the outcome is unknown
+```
+
+
+## C. Separate data by Turnover Intention
+
+```{r}
+table(data_2017$Turnover_B)
+```
+
+```{r}
+write.csv(data_2017, "./Input Data/data_typeAll_2017.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 

@@ -1,0 +1,2035 @@
+
+
+# CART ANALYSIS
+
+# ****************************************
+
+```{}
+Tips:
+https://rstudio-pubs-static.s3.amazonaws.com/442284_82321e66af4e49d58adcd897e00bf495.html
+https://mlr.mlr-org.com/articles/tutorial/measures.html
+```
+
+
+# I. Setup Environment
+
+## A. Load libraries
+
+```{r}
+suppressMessages(library(haven))
+suppressMessages(library(tidyverse))
+suppressMessages(library(rsample))
+suppressMessages(library(caret))
+suppressMessages(library(rpart))
+suppressMessages(library(RANN))
+suppressMessages(library(e1071))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(rattle))
+suppressMessages(library(mice))
+suppressMessages(library(pROC))
+suppressMessages(library(plotROC))
+suppressMessages(library(corrplot))
+suppressMessages(library(reshape2))
+suppressMessages(library(factoextra))
+suppressMessages(library(cluster))
+suppressMessages(library(fpc))
+suppressMessages(library(pipelearner))
+suppressMessages(library(parallel))
+suppressMessages(library(mlr))
+suppressMessages(library(parallelMap))
+suppressMessages(library(ROCR))
+suppressMessages(library(data.table))
+suppressMessages(library(assertr))
+```
+
+```{r}
+seed = 40
+```
+
+
+<!-- ## B. Load cleaned SPSS data -->
+
+<!-- ```{r message=FALSE, warning=FALSE} -->
+<!-- data_in <- readr::read_csv("./Data/data_type2.csv") -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- head(data_in) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- nrow(data_in) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- data <- data_in %>% -->
+<!--   select(-X1) %>% -->
+<!--   mutate(Turnover_Binary = as.factor(Turnover_Binary), -->
+<!--          Gender = as.factor(Gender), -->
+<!--          EduAttain = as.factor(EduAttain), -->
+<!--          OrgTenure = as.factor(OrgTenure), -->
+<!--          Supervisory = as.factor(Supervisory), -->
+<!--          Minority = as.factor(Minority)) %>% -->
+<!--   mutate(POSTWT = as.numeric(POSTWT)) %>% -->
+<!--   filter(!is.na(Turnover_Binary)) # Filter out any responses where the outcome is unknown -->
+<!-- ``` -->
+
+
+<!-- ## C. Create different datasets -->
+
+<!-- ```{r} -->
+<!-- set.seed(seed) -->
+
+<!-- spec = c(train = 0.6, test = 0.2, validate = 0.2) -->
+
+<!-- g = sample(cut( -->
+<!--   seq(nrow(data)), -->
+<!--   nrow(data) * cumsum(c(0, spec)), -->
+<!--   labels = names(spec) -->
+<!-- )) -->
+
+<!-- res = split(data, g) -->
+
+<!-- dataTrain <- data.frame(res$train) -->
+<!-- dataValidate <- data.frame(res$validate) -->
+<!-- dataTest <- data.frame(res$test) -->
+
+<!-- # Combine Train and Validate sets to use after hyperparameter tuning -->
+<!-- dataTrainValidate <- rbind(dataTrain, dataValidate) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- # Seed -->
+<!-- # seed = 20 -->
+<!-- #  -->
+<!-- # set.seed(seed) -->
+<!-- #  -->
+<!-- # # Split the data into training and validation/test sets -->
+<!-- # training_rows <- createDataPartition(data$Turnover, p = 0.75, list = FALSE) -->
+<!-- # dataTrain  <- data.frame(data[training_rows, ]) -->
+<!-- # dataValidationTest <- data.frame(data[-training_rows, ]) -->
+<!-- #  -->
+<!-- # # Split the validation/test set into individual parts -->
+<!-- # random_rows2 <- createDataPartition(dataValidationTest$Turnover, p = 0.5, list = FALSE) -->
+<!-- # dataValidation <- data.frame(dataValidationTest[random_rows2, ]) -->
+<!-- # dataTest <- data.frame(dataValidationTest[-random_rows2, ]) -->
+<!-- #  -->
+<!-- # # Create data without missing values just to explore -->
+<!-- # dataTrain_na = data.frame(na.omit(dataTrain)) -->
+<!-- # dataTest_na  = data.frame(na.omit(dataTest)) -->
+
+<!-- # numRows <- nrow(dataTest_na) -->
+<!-- # dataTest_na %>% -->
+<!-- #   select(Turnover, JobSatisfaction) %>% -->
+<!-- #   mutate(JobSat35 = ifelse(JobSatisfaction >= 3.5, 1, 0)) %>% -->
+<!-- #   group_by(JobSat35) %>% -->
+<!-- #   summarise(Percent = sum(JobSat35) / numRows) -->
+<!-- ``` -->
+
+
+<!-- <!-- ## D. Visualize predictors --> -->
+
+<!-- <!-- ### 1. Histograms of predictors --> -->
+
+<!-- <!-- ```{r} --> -->
+<!-- <!-- dataFacet <- data %>% --> -->
+<!-- <!--   select(-Turnover, -POSTWT, -RANDOM) %>% --> -->
+<!-- <!--   keep(is.numeric) --> -->
+
+
+<!-- <!-- dataHalf1 <- dataFacet[,1:27] --> -->
+<!-- <!-- dataHalf2 <- dataFacet[,27:54] --> -->
+<!-- <!-- ``` --> -->
+
+
+
+<!-- <!-- ```{r, fig.height = 6, fig.width = 9, fig.retina = 2} --> -->
+<!-- <!-- dataHalf1 %>% --> -->
+<!-- <!--   keep(is.numeric) %>% --> -->
+<!-- <!--   gather() %>% --> -->
+<!-- <!--   ggplot(aes(value)) +  --> -->
+<!-- <!--   facet_wrap(~ key, scales = "free") + --> -->
+<!-- <!--   geom_bar() --> -->
+<!-- <!-- ``` --> -->
+
+<!-- <!-- ```{r, fig.height = 6, fig.width = 9, fig.retina = 2} --> -->
+<!-- <!-- dataHalf2 %>% --> -->
+<!-- <!--   keep(is.numeric) %>% --> -->
+<!-- <!--   gather() %>% --> -->
+<!-- <!--   ggplot(aes(value)) +  --> -->
+<!-- <!--   facet_wrap(~ key, scales = "free") + --> -->
+<!-- <!--   geom_bar() --> -->
+<!-- <!-- ``` --> -->
+
+
+
+
+
+
+<!-- <!-- ### 2. Predictor Correlation --> -->
+
+<!-- <!-- #### a. Correlation Matrix --> -->
+
+<!-- <!-- ```{r} --> -->
+<!-- <!-- correlation_matrix <- cor(na.omit(dataFacet)) --> -->
+<!-- <!-- ``` --> -->
+
+<!-- <!-- #### b. Correlation Plots - Medium --> -->
+
+<!-- <!-- ```{r, fig_height = 16, fig.width= 20} --> -->
+<!-- <!-- correlation_plot_squares <- corrplot(correlation_matrix, method = "color") --> -->
+<!-- <!-- correlation_plot_circles_values <- corrplot.mixed(correlation_matrix) --> -->
+<!-- <!-- correlation_plot_hclust <- corrplot(correlation_matrix, order = "hclust", addrect = 2) --> -->
+
+<!-- <!-- correlation_plot_squares --> -->
+<!-- <!-- correlation_plot_circles_values --> -->
+<!-- <!-- correlation_plot_hclust --> -->
+
+<!-- <!-- ``` --> -->
+
+
+
+
+
+<!-- <!-- #### c. Correlation Plots - Large --> -->
+
+<!-- <!-- ```{r, fig_height = 20, fig.width= 24, fig.retina = 2} --> -->
+<!-- <!-- # generating large feature matrix (cols=features, rows=samples) --> -->
+
+<!-- <!-- DATASET <- na.omit(dataFacet) --> -->
+<!-- <!-- num_features <- ncol(DATASET) # how many features --> -->
+<!-- <!-- num_samples <- nrow(DATASET) # how many samples --> -->
+
+<!-- <!-- # setting some dummy names for the features e.g. f23 --> -->
+<!-- <!-- colnames(DATASET) <- paste0("f", 1:ncol(DATASET)) --> -->
+
+<!-- <!-- # let's make 30% of all features to be correlated with feature "f1" --> -->
+<!-- <!-- num_feat_corr <- num_features * .3 --> -->
+<!-- <!-- idx_correlated_features <- as.integer(seq(from = 1, --> -->
+<!-- <!--                                           to = num_features, --> -->
+<!-- <!--                                           length.out = num_feat_corr))[-1] --> -->
+<!-- <!-- for (i in idx_correlated_features) { --> -->
+<!-- <!--   DATASET[,i] <- DATASET[,1] + runif(num_samples) # adding some noise --> -->
+<!-- <!-- } --> -->
+
+<!-- <!-- corrplot(cor(DATASET), diag = FALSE, order = "FPC", --> -->
+<!-- <!--          tl.pos = "td", tl.cex = 1, method = "color", type = "upper") --> -->
+<!-- <!-- ``` --> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- # ************************************ -->
+
+<!-- # II. Modeling with Hyperparameter Tuning -->
+
+<!-- ## A. Create model learners -->
+
+<!-- ```{r} -->
+<!-- # Learner creation -->
+<!-- turnover.task <- makeClassifTask(id = "turnover_class", data = dataTrain, target = "Turnover_Binary", weights = dataTrain$POSTWT) -->
+<!-- test.task <- makeClassifTask(id = "turnover_test", data = dataValidate, target = "Turnover_Binary", weights = dataValidate$POSTWT) -->
+<!-- lrn <- makeLearner("classif.rpart", predict.type = "prob") -->
+
+<!-- # Get a list of all parameters that are tune-able -->
+<!-- # getParamSet(lrn) -->
+
+<!-- # Tuning grid -->
+<!-- ps <- makeParamSet( -->
+<!--   makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)), -->
+<!--   makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)), -->
+<!--   makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)), -->
+<!--   makeDiscreteParam("maxdepth", values = c(4, 5, 6)) -->
+<!-- ) -->
+
+<!-- # ps <- makeParamSet( -->
+<!-- #   makeNumericParam("cp", lower = 0.00000001, upper = 0.01), -->
+<!-- #   makeNumericParam("minsplit", lower = 50, upper = 500), -->
+<!-- #   makeNumericParam("minbucket", lower = 50, upper = 500), -->
+<!-- #   makeDiscreteParam("maxdepth", values = c(4, 5, 6)) -->
+<!-- # ) -->
+<!-- ``` -->
+
+<!-- ## B. Run tuning  -->
+
+<!-- ```{r} -->
+<!-- # Set random seed -->
+<!-- set.seed(seed) -->
+
+<!-- # Define number of CPU cores to use when training models -->
+<!-- parallelStartSocket(8) -->
+
+<!-- # Start timer -->
+<!-- start_time <- Sys.time() -->
+
+<!-- control.grid <- makeTuneControlGrid() # control is a required parameter in tuneParams -->
+<!-- resamp <- makeResampleDesc("CV", iters = 3) # Setting up cross validation and actual tuning (3-fold CV) -->
+
+<!-- tuned.turnover <- tuneParams(lrn, task = turnover.task,  -->
+<!--                              resampling = resamp,  -->
+<!--                              control = control.grid,  -->
+<!--                              par.set = ps,  -->
+<!--                              measures = list(auc, acc, kappa), -->
+<!--                              show.info = TRUE) -->
+
+<!-- # End timer -->
+<!-- end_time <- Sys.time() -->
+<!-- end_time - start_time -->
+
+<!-- parallelStop() -->
+<!-- ``` -->
+
+
+<!-- ## C. Summarize accuracy -->
+
+<!-- ```{r} -->
+<!-- opt.grid <- data.frame(tuned.turnover$opt.path) -->
+<!-- nrow(opt.grid) -->
+<!-- opt.grid %>% -->
+<!--   arrange(desc(auc.test.mean), cp) #%>% -->
+<!--   # filter(maxdepth == 6, -->
+<!--   #        minsplit == 100, -->
+<!--   #        minbucket == 50) %>% -->
+<!--   # #filter(maxdepth == 6) %>% -->
+<!--   # arrange(desc(auc.test.mean), cp) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- opt.grid  -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- write.csv(opt.grid, "opt_grid_Oct6.csv ") -->
+<!-- ``` -->
+
+
+
+
+
+<!-- # ******************** -->
+<!-- # III. Final modeling w Rpart -->
+
+<!-- ## A. Function -->
+
+<!-- ```{r} -->
+<!-- make_model <- function(cp, minsplit, minbucket, maxdepth) { -->
+
+<!--   # Create rpart control -->
+<!--   rpart_control_func <- rpart.control(cp = cp, -->
+<!--                                         minsplit = minsplit, -->
+<!--                                         minbucket = minbucket, -->
+<!--                                         maxdepth = maxdepth) -->
+<!--   # Create model -->
+<!--   model <- rpart( -->
+<!--     # Formula -->
+<!--     Turnover_Binary ~ Gender + EduAttain + OrgTenure + Supervisory + Minority + SkillOpport +  -->
+<!--       EnoughInfo + Newways + Accomplish + Likeness + JobExpect + Willingness + EnoughResoure +  -->
+<!--       Workload + Talent + GoalClarify + Importance + PhyCondition + FairApprisal + Disclosure +  -->
+<!--       Training + PerApprisal + Coworker + Promotion + AppropriateStep + PerRecognition + Awards +  -->
+<!--       ShareKnowledg + KnowledgeSkill + Empowerment + Recognition + Creativity + PayRaise +  -->
+<!--       PolicyDiversity + Loyalty + Worklife1 + LeadershipOppor +  Communication + Representative +  -->
+<!--       ConstructiveSugg + EmployDevel + Listening + TreatRespect + TalkPerform + TrustSuper1 +  -->
+<!--       ImmediateSuper + TrustSuper2 + Integrity + DiffBackground + OrganiGoal + EvalProgress +  -->
+<!--       HighRespect + Worklife2 + Involvement + ManageInfo +  OpportSatis + JobSatisfaction +  -->
+<!--       PaySatisfaction + OrgSatisfaction, -->
+<!--     # Other modeling parameters -->
+<!--     data = dataTrainValidate, -->
+<!--     weights = POSTWT, -->
+<!--     control = rpart_control_func -->
+<!--     ) -->
+<!--   return(model) -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+<!-- ## B. 15 at-risk subgroups -->
+
+<!-- ### 1. Create model -->
+
+<!-- ```{r} -->
+<!-- # Define number of CPU cores to use when training models -->
+<!-- parallelStartSocket(8) -->
+
+
+<!-- # Start timer -->
+<!-- start_time <- Sys.time() -->
+<!-- mymodelB <- make_model(cp = 0.001, minsplit = 100, minbucket = 50, maxdepth = 4) -->
+<!-- # End timer -->
+<!-- end_time <- Sys.time() -->
+<!-- end_time - start_time -->
+
+<!-- parallelStop() -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- info.gain(mymodelB) -->
+<!-- ``` -->
+
+
+
+
+
+<!-- ### 2. Visualize -->
+
+<!-- ```{r, fig_height = 20, fig.width= 24, fig.retina = 2} -->
+<!-- prp(mymodelB, type = 5, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelB, type = 5, extra = 1, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelB, type = 5, extra = 4, box.palette="Greys", roundint=FALSE) -->
+<!-- ``` -->
+
+<!-- ### 3. Accuracy -->
+
+<!-- ```{r, fig_height = 9, fig.width= 16, fig.retina = 2} -->
+<!-- Pred.cart = predict(mymodelB, newdata = dataTest, type = "prob")[,2]  -->
+<!-- Pred2 = prediction(Pred.cart, dataTest$Turnover_Binary)  -->
+<!-- plot(performance(Pred2, "tpr", "fpr")) -->
+<!-- abline(0, 1, lty = 2) -->
+<!-- plot(performance(Pred2, "acc")) -->
+
+<!-- # Get AUC -->
+<!-- auc_ROCR <- performance(Pred2, measure = "auc") -->
+<!-- auc_ROCR <- auc_ROCR@y.values[[1]] -->
+<!-- auc_ROCR -->
+
+<!-- # Get Accuracy -->
+<!-- results <- ifelse(Pred.cart > 0.4, 1, 0) -->
+<!-- table(results, dataTest$Turnover_Binary) -->
+<!-- mean(results == dataTest$Turnover_Binary) -->
+
+<!-- ``` -->
+
+<!-- ### 4. Variable Importance -->
+
+<!-- ```{r} -->
+<!-- mymodelB$variable.importance -->
+<!-- ``` -->
+
+
+
+
+
+
+
+<!-- ## D. 10 at-risk subgroups -->
+
+<!-- ### 1. Create model -->
+
+<!-- ```{r} -->
+<!-- # Define number of CPU cores to use when training models -->
+<!-- parallelStartSocket(8) -->
+<!-- # Start timer -->
+<!-- start_time <- Sys.time() -->
+<!-- mymodelD <- make_model(cp = 0.0001, minsplit = 100, minbucket = 50, maxdepth = 6) -->
+<!-- # End timer -->
+<!-- end_time <- Sys.time() -->
+<!-- end_time - start_time -->
+<!-- parallelStop() -->
+<!-- ``` -->
+
+<!-- ### 2. Visualize -->
+
+<!-- ```{r, fig_height = 20, fig.width= 24, fig.retina = 2} -->
+<!-- prp(mymodelD, type = 5, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelD, type = 5, extra = 1, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelD, type = 5, extra = 4, box.palette="Greys", roundint=FALSE) -->
+<!-- ``` -->
+
+<!-- ### 3. Accuracy -->
+
+<!-- ```{r, fig_height = 9, fig.width= 16, fig.retina = 2} -->
+<!-- Pred.cart = predict(mymodelD, newdata = dataTest, type = "prob")[,2]  -->
+<!-- Pred2 = prediction(Pred.cart, dataTest$Turnover)  -->
+<!-- plot(performance(Pred2, "tpr", "fpr")) -->
+<!-- abline(0, 1, lty = 2) -->
+<!-- plot(performance(Pred2, "acc")) -->
+
+<!-- # Get AUC -->
+<!-- auc_ROCR <- performance(Pred2, measure = "auc") -->
+<!-- auc_ROCR <- auc_ROCR@y.values[[1]] -->
+<!-- auc_ROCR -->
+
+<!-- # Get Accuracy -->
+<!-- results <- ifelse(Pred.cart > 0.4, 1, 0) -->
+<!-- table(results, dataTest$Turnover) -->
+<!-- mean(results == dataTest$Turnover) -->
+
+<!-- ``` -->
+
+
+<!-- ### 4. Variable Importance -->
+
+<!-- ```{r} -->
+<!-- mymodelD$variable.importance -->
+<!-- ``` -->
+
+<!-- ## E. 6 at-risk subgroups -->
+
+<!-- ### 1. Create model -->
+
+<!-- ```{r} -->
+<!-- # Define number of CPU cores to use when training models -->
+<!-- parallelStartSocket(8) -->
+<!-- # Start timer -->
+<!-- start_time <- Sys.time() -->
+<!-- mymodelE <- make_model(cp = 0.001, minsplit = 100, minbucket = 50, maxdepth = 6) -->
+<!-- # End timer -->
+<!-- end_time <- Sys.time() -->
+<!-- end_time - start_time -->
+<!-- parallelStop() -->
+<!-- ``` -->
+
+<!-- ### 2. Visualize -->
+
+<!-- ```{r, fig_height = 20, fig.width= 24, fig.retina = 2} -->
+<!-- prp(mymodelE, type = 5, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelE, type = 5, extra = 1, box.palette="Greys", roundint=FALSE) -->
+<!-- prp(mymodelE, type = 5, extra = 4, box.palette="Greys", roundint=FALSE) -->
+<!-- ``` -->
+
+<!-- ### 3. Accuracy -->
+
+<!-- ```{r, fig_height = 9, fig.width= 16, fig.retina = 2} -->
+<!-- Pred.cart = predict(mymodelE, newdata = dataTest, type = "prob")[,2]  -->
+<!-- Pred2 = prediction(Pred.cart, dataTest$Turnover)  -->
+<!-- plot(performance(Pred2, "tpr", "fpr")) -->
+<!-- abline(0, 1, lty = 2) -->
+<!-- plot(performance(Pred2, "acc")) -->
+
+<!-- # Get AUC -->
+<!-- auc_ROCR <- performance(Pred2, measure = "auc") -->
+<!-- auc_ROCR <- auc_ROCR@y.values[[1]] -->
+<!-- auc_ROCR -->
+
+<!-- # Get Accuracy -->
+<!-- results <- ifelse(Pred.cart > 0.4, 1, 0) -->
+<!-- table(results, dataTest$Turnover) -->
+<!-- mean(results == dataTest$Turnover) -->
+
+<!-- ``` -->
+
+
+
+<!-- ### 4. Variable Importance -->
+
+<!-- ```{r} -->
+<!-- mymodelE$variable.importance -->
+<!-- ``` -->
+
+
+
+
+
+
+
+
+<!-- # ************************************************** -->
+
+<!-- # IV. Using the MLR package to train the final model (Optional) -->
+
+<!-- ## A. Function -->
+
+<!-- ```{r} -->
+<!-- build_model <- function(data_training, data_testing, data_weights, cp, minsplit, minbucket, maxdepth) { -->
+
+<!--   # Set hyperparameters -->
+<!--   model_hyperparameters <- list(cp = cp,  -->
+<!--                                 minsplit = minsplit,  -->
+<!--                                 minbucket = minbucket,  -->
+<!--                                 maxdepth = maxdepth) -->
+
+<!--   # Create learn object -->
+<!--   model_learner <- makeLearner("classif.rpart", predict.type = "prob") -->
+
+<!--   # Create tuner -->
+<!--   model_tuner <- setHyperPars(learner = model_learner, par.vals = model_hyperparameters) -->
+
+<!--   # Create classifier task -->
+<!--   model_task <- makeClassifTask(id = "final_modeler", -->
+<!--                                 data = data_training, -->
+<!--                                 target = "Turnover", -->
+<!--                                 weights = data_weights) -->
+
+<!--   # Create testing task -->
+<!--   test_task <- makeClassifTask(id = "turnover_test", data = data_testing, target = "Turnover", weights = data_testing$POSTWT) -->
+
+<!--   # Build model -->
+<!--   model <- mlr::train(learner = model_learner, -->
+<!--                       task = model_task, -->
+<!--                       weights = data_weights) -->
+
+<!--   # Visualize tree -->
+<!--   #model_viz <- prp(getLearnerModel(model, more.unwrap = TRUE), type = 5, box.palette="Greys") -->
+
+<!--   # Accuracy -->
+<!--   model_predictions <- predict(model, model_task) -->
+<!--   model_predictions_data <- model_predictions$data -->
+<!--   model_confusion_matrix <- table(model_predictions_data$response, model_predictions_data$truth) -->
+<!--   #accuracy = sum(diag(model_confusion_matrix)) / sum(model_confusion_matrix) -->
+
+<!--   # Accuracies -->
+<!--   measures = list("acc" = acc, "auc" = auc, "kappa" = kappa) -->
+<!--   model_measures = mlr::performance(model_predictions, measures) -->
+
+<!--   # Variable Importance -->
+<!--   model_variable_importance = data.frame(model$learner.model$variable.importance) %>% -->
+<!--     rownames_to_column("Predictor") %>% -->
+<!--     rename(VariableImportance = model.learner.model.variable.importance) %>% -->
+<!--     arrange(desc(VariableImportance)) -->
+
+<!--   return(list(model = model, model_measures = model_measures, model_variable_importance = model_variable_importance)) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ## B. Run -->
+
+<!-- ```{r} -->
+<!-- # Create training data -->
+<!-- df_turnover_and_features <- dataTrainValidate %>% select(-POSTWT, -RANDOM) -->
+
+<!-- # Create weights vector -->
+<!-- df_weights <- dataTrainValidate$POSTWT -->
+
+<!-- # Run building function -->
+<!-- my_model <- build_model(data_training = df_turnover_and_features, -->
+<!--                         data_testing = dataTest, -->
+<!--                         data_weights = df_weights, -->
+<!--                         cp = 0.0000001, -->
+<!--                         minsplit = 20, -->
+<!--                         minbucket = 100, -->
+<!--                         maxdepth = 1) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- my_model$model_measures -->
+<!-- ``` -->
+
+<!-- ## C.  Plot -->
+
+<!-- ```{r} -->
+<!-- prp(getLearnerModel(my_model$model, more.unwrap = TRUE), type = 5, box.palette="Greys") -->
+<!-- ``` -->
+
+
+# *******************************
+
+# III. Model for Type All 2018
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Input Data/data_typeAll.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(15560)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+
+
+## B. CART Modeling
+
+### 1. Select hyperparameters
+
+```{r}
+# Learner creation
+traintask <- makeClassifTask(id = "turnover_class", data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.rpart", predict.type = "prob")
+
+# Get a list of all parameters that are tune-able
+# getParamSet(lrn)
+
+# Tuning grid
+params <- makeParamSet(
+  makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)),
+  makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)),
+  makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)),
+  makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+)
+
+# ps <- makeParamSet(
+#   makeNumericParam("cp", lower = 0.00000001, upper = 0.01),
+#   makeNumericParam("minsplit", lower = 50, upper = 500),
+#   makeNumericParam("minbucket", lower = 50, upper = 500),
+#   makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+
+```
+
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+cart_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+cartmodel <- train(learner = cart_tuned_learner,
+                 task = traintask)
+
+# predict model
+cartpred <- predict(cartmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(cartpred$data$response, cartpred$data$truth)
+performance
+```
+
+### 5. ROC and AUC
+
+```{r}
+roc(as.numeric(cartpred$data$response), as.numeric(cartpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+### 6. Visualize
+
+```{r, fig_height = 10, fig.width= 12, fig.retina = 2}
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 1, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 4, box.palette="Greys", roundint=FALSE)
+```
+
+
+
+
+### 7. Get rules
+
+```{r}
+rules <- rpart.rules(getLearnerModel(cartmodel, more.unwrap = TRUE))
+rules <- rules %>%
+  assertr::col_concat(sep = " ") %>%
+  data.frame()
+rules
+```
+
+```{r}
+write.csv(rules, "./Output Data/rules_all_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+### 8. Variable Importance
+
+```{r}
+featureimportance <- as.data.frame(t(getFeatureImportance(cartmodel)$res))
+
+featureimportance_clean <- featureimportance %>%
+  tibble::rownames_to_column() %>%
+  rename(Variable = rowname) %>%
+  arrange(desc(V1))
+
+featureimportance_clean
+```
+
+```{r}
+write.csv(featureimportance_clean, "./Output Data/importance_all_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# *******************************
+
+# III. Model for Type 2 2018
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Input Data/data_type2.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+
+
+## B. CART Modeling
+
+### 1. Select hyperparameters
+
+```{r}
+# Learner creation
+traintask <- makeClassifTask(id = "turnover_class", data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.rpart", predict.type = "prob")
+
+# Get a list of all parameters that are tune-able
+# getParamSet(lrn)
+
+# Tuning grid
+params <- makeParamSet(
+  makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)),
+  makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)),
+  makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)),
+  makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+)
+
+# ps <- makeParamSet(
+#   makeNumericParam("cp", lower = 0.00000001, upper = 0.01),
+#   makeNumericParam("minsplit", lower = 50, upper = 500),
+#   makeNumericParam("minbucket", lower = 50, upper = 500),
+#   makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+
+```
+
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+cart_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+cartmodel <- train(learner = cart_tuned_learner,
+                 task = traintask)
+
+# predict model
+cartpred <- predict(cartmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(cartpred$data$response, cartpred$data$truth)
+performance
+```
+
+### 5. ROC and AUC
+
+```{r}
+roc(as.numeric(cartpred$data$response), as.numeric(cartpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+### 6. Visualize
+
+```{r, fig_height = 10, fig.width= 12, fig.retina = 2}
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 1, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 4, box.palette="Greys", roundint=FALSE)
+```
+
+
+### 7. Get rules
+
+```{r}
+rules <- rpart.rules(getLearnerModel(cartmodel, more.unwrap = TRUE))
+rules <- rules %>%
+  assertr::col_concat(sep = " ") %>%
+  data.frame()
+rules
+```
+
+```{r}
+write.csv(rules, "./Output Data/rules_2_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+### 8. Variable Importance
+
+```{r}
+featureimportance <- as.data.frame(t(getFeatureImportance(cartmodel)$res))
+
+featureimportance_clean <- featureimportance %>%
+  tibble::rownames_to_column() %>%
+  rename(Variable = rowname) %>%
+  arrange(desc(V1))
+
+featureimportance_clean
+```
+
+```{r}
+write.csv(featureimportance_clean, "./Output Data/importance_2_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# *******************************
+
+# III. Model for Type 3 2018
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Input Data/data_type3.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+
+
+## B. CART Modeling
+
+### 1. Select hyperparameters
+
+```{r}
+# Learner creation
+traintask <- makeClassifTask(id = "turnover_class", data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.rpart", predict.type = "prob")
+
+# Get a list of all parameters that are tune-able
+# getParamSet(lrn)
+
+# Tuning grid
+params <- makeParamSet(
+  makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)),
+  makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)),
+  makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)),
+  makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+)
+
+# ps <- makeParamSet(
+#   makeNumericParam("cp", lower = 0.00000001, upper = 0.01),
+#   makeNumericParam("minsplit", lower = 50, upper = 500),
+#   makeNumericParam("minbucket", lower = 50, upper = 500),
+#   makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+
+```
+
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+cart_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+cartmodel <- train(learner = cart_tuned_learner,
+                 task = traintask)
+
+# predict model
+cartpred <- predict(cartmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(cartpred$data$response, cartpred$data$truth)
+performance
+```
+
+### 5. ROC and AUC
+
+```{r}
+roc(as.numeric(cartpred$data$response), as.numeric(cartpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+### 6. Visualize
+
+```{r, fig_height = 10, fig.width= 12, fig.retina = 2}
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 1, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 4, box.palette="Greys", roundint=FALSE)
+```
+
+
+### 7. Get rules
+
+```{r}
+rules <- rpart.rules(getLearnerModel(cartmodel, more.unwrap = TRUE))
+rules <- rules %>%
+  assertr::col_concat(sep = " ") %>%
+  data.frame()
+rules
+```
+
+```{r}
+write.csv(rules, "./Output Data/rules_3_cart.csv")
+```
+
+
+
+
+
+### 8. Variable Importance
+
+```{r}
+featureimportance <- as.data.frame(t(getFeatureImportance(cartmodel)$res))
+
+featureimportance_clean <- featureimportance %>%
+  tibble::rownames_to_column() %>%
+  rename(Variable = rowname) %>%
+  arrange(desc(V1))
+
+featureimportance_clean
+```
+
+```{r}
+write.csv(featureimportance_clean, "./Output Data/importance_3_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# *******************************
+
+# III. Model for Type 4 2018
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Input Data/data_type4.csv")
+data <- data %>% select(-X1)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary, -Turnover_Category)
+test_X <- test %>% select(-Turnover_Binary, -Turnover_Category)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+
+
+## B. CART Modeling
+
+### 1. Select hyperparameters
+
+```{r}
+# Learner creation
+traintask <- makeClassifTask(id = "turnover_class", data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.rpart", predict.type = "prob")
+
+# Get a list of all parameters that are tune-able
+# getParamSet(lrn)
+
+# Tuning grid
+params <- makeParamSet(
+  makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)),
+  makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)),
+  makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)),
+  makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+)
+
+# ps <- makeParamSet(
+#   makeNumericParam("cp", lower = 0.00000001, upper = 0.01),
+#   makeNumericParam("minsplit", lower = 50, upper = 500),
+#   makeNumericParam("minbucket", lower = 50, upper = 500),
+#   makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+
+```
+
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+cart_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+cartmodel <- train(learner = cart_tuned_learner,
+                 task = traintask)
+
+# predict model
+cartpred <- predict(cartmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(cartpred$data$response, cartpred$data$truth)
+performance
+```
+
+### 5. ROC and AUC
+
+```{r}
+roc(as.numeric(cartpred$data$response), as.numeric(cartpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+### 6. Visualize
+
+```{r, fig_height = 10, fig.width= 12, fig.retina = 2}
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 1, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 4, box.palette="Greys", roundint=FALSE)
+```
+
+
+
+
+### 7. Get rules
+
+```{r}
+rules <- rpart.rules(getLearnerModel(cartmodel, more.unwrap = TRUE))
+rules <- rules %>%
+  assertr::col_concat(sep = " ") %>%
+  data.frame()
+rules
+```
+
+```{r}
+write.csv(rules, "./Output Data/rules_4_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+### 8. Variable Importance
+
+```{r}
+featureimportance <- as.data.frame(t(getFeatureImportance(cartmodel)$res))
+
+featureimportance_clean <- featureimportance %>%
+  tibble::rownames_to_column() %>%
+  rename(Variable = rowname) %>%
+  arrange(desc(V1))
+
+featureimportance_clean
+```
+
+```{r}
+write.csv(featureimportance_clean, "./Output Data/importance_4_cart.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# *******************************
+
+# III. Model for Type All 2017
+
+
+## A. Data Preprocessing
+
+
+### 1. Load cleaned SPSS data
+
+```{r}
+#data_read <- read_sav("2018FEVS CART-Selected IVs.sav")
+data <- readr::read_csv("./Input Data/data_typeAll_2017.csv")
+data <- data %>% 
+  select(-X1) %>%
+  rename(Turnover_Binary = Turnover_B)
+```
+
+
+
+### 2. One-Hot-Encoding
+
+```{r}
+ohe_feats = c("Gender", "EduAttain", "OrgTenure", "Supervisory", "Minority")
+dummies = dummyVars(~ Gender + EduAttain + OrgTenure + Supervisory + Minority, data = data)
+df_all_ohe <- as.data.frame(predict(dummies, newdata = data))
+df_all_combined <- cbind(data[,-c(which(colnames(data) %in% ohe_feats))],df_all_ohe)
+
+data = df_all_combined
+```
+
+
+
+### 3. Create train/valid/test sets
+
+```{r}
+set.seed(10)
+
+smp_size <- floor(0.75 * nrow(data))
+train_ind <- sample(seq_len(nrow(data)), size = smp_size)
+
+# Subsets
+train <- data[train_ind, ]
+test <- data[-train_ind, ]
+
+# Training sets
+train_X <- train %>% select(-Turnover_Binary)
+test_X <- test %>% select(-Turnover_Binary)
+
+# Testing sets
+train_y <- train %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+test_y <- test %>% 
+  select(Turnover_Binary) %>%
+  mutate(Turnover_Binary = as.integer(Turnover_Binary)) #%>% 
+  # mutate(Turnover_Binary = case_when(Turnover_Binary == 1 ~ 0,
+  #                                    Turnover_Binary == 2 ~ 1))
+
+# Convert to matrices
+train_X = data.matrix(train_X)
+test_X = data.matrix(test_X)
+train_y = data.matrix(train_y)
+test_y = data.matrix(test_y)
+```
+
+```{r}
+# Put back together into dataframes
+train_df <- data.frame(cbind(train_X, train_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+test_df <- data.frame(cbind(test_X, test_y)) %>%
+  mutate(Turnover_Binary = as.factor(Turnover_Binary))
+```
+
+```{r}
+# Create weights
+train_weights <- train_df$POSTWT
+test_weights <- test_df$POSTWT
+
+train_df <- train_df %>% select(-POSTWT)
+test_df <- test_df %>% select(-POSTWT)
+```
+
+
+
+
+
+
+
+
+## B. CART Modeling
+
+### 1. Select hyperparameters
+
+```{r}
+# Learner creation
+traintask <- makeClassifTask(id = "turnover_class", data = train_df, target = "Turnover_Binary", weights = train_weights)
+
+# Create learner
+lrn <- makeLearner("classif.rpart", predict.type = "prob")
+
+# Get a list of all parameters that are tune-able
+# getParamSet(lrn)
+
+# Tuning grid
+params <- makeParamSet(
+  makeDiscreteParam("cp", values = c(0.001, 0.0001, 0.00001, 0.000001, 0.0000001, 0.00000001)),
+  makeDiscreteParam("minsplit", values = c(100, 150, 200, 250, 300)),
+  makeDiscreteParam("minbucket", values = c(50, 100, 150, 200, 250)),
+  makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+)
+
+# ps <- makeParamSet(
+#   makeNumericParam("cp", lower = 0.00000001, upper = 0.01),
+#   makeNumericParam("minsplit", lower = 50, upper = 500),
+#   makeNumericParam("minbucket", lower = 50, upper = 500),
+#   makeDiscreteParam("maxdepth", values = c(4, 5, 6))
+
+# Set resampling strategy
+rdesc <- makeResampleDesc("CV", stratify = T, iters = 2L) # Chooses how to do cross-validation
+
+# Search strategy
+ctrl <- makeTuneControlRandom(maxit = 10L) # Chooses how many combinations of parameters to pick at random
+
+```
+
+
+### 2. Run tuning process
+
+```{r}
+start_time <- Sys.time()
+
+#set parallel backend
+library(parallel)
+library(parallelMap)
+parallelStartSocket(cpus = detectCores())
+
+# #parameter tuning
+mytune <- tuneParams(learner = lrn, 
+                     task = traintask,   
+                     resampling = rdesc, 
+                     measures = auc, 
+                     par.set = params, 
+                     control = ctrl, 
+                     show.info = T)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+
+
+```{r}
+mytune$x
+```
+
+```{r}
+mytune$y
+```
+
+
+
+```{r}
+# mytune$x$max_depth = 15
+# mytune$x$gamma = 1
+# mytune$x$eta = 0.01
+# mytune$x$subsample = 0.5
+# mytune$x$colsample_bytree = 0.5
+```
+
+
+
+### 3. Retrain best model and predict test
+
+```{r}
+start_time <- Sys.time()
+
+# Create test task
+testTask <- makeClassifTask(data = test_df, target = "Turnover_Binary", weights = test_weights)
+
+# set hyperparameters
+cart_tuned_learner <- setHyperPars(learner = lrn, 
+                                  par.vals = mytune$x)
+
+# train model
+cartmodel <- train(learner = cart_tuned_learner,
+                 task = traintask)
+
+# predict model
+cartpred <- predict(cartmodel, testTask)
+
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+### 4. Model performance metrics
+
+```{r}
+performance <- confusionMatrix(cartpred$data$response, cartpred$data$truth)
+performance
+```
+
+### 5. ROC and AUC
+
+```{r}
+roc(as.numeric(cartpred$data$response), as.numeric(cartpred$data$truth), plot=T, print.auc = TRUE)
+```
+
+
+### 6. Visualize
+
+```{r, fig_height = 10, fig.width= 14, fig.retina = 2}
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 1, box.palette="Greys", roundint=FALSE)
+prp(getLearnerModel(cartmodel, more.unwrap = TRUE), type = 5, extra = 4, box.palette="Greys", roundint=FALSE)
+```
+
+
+
+
+### 7. Get rules
+
+```{r}
+rules <- rpart.rules(getLearnerModel(cartmodel, more.unwrap = TRUE))
+rules <- rules %>%
+  assertr::col_concat(sep = " ") %>%
+  data.frame()
+rules
+```
+
+```{r}
+write.csv(rules, "./Output Data/rules_all_cart_2017.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### 8. Variable Importance
+
+```{r}
+featureimportance <- as.data.frame(t(getFeatureImportance(cartmodel)$res))
+
+featureimportance_clean <- featureimportance %>%
+  tibble::rownames_to_column() %>%
+  rename(Variable = rowname) %>%
+  arrange(desc(V1))
+
+featureimportance_clean
+```
+
+```{r}
+write.csv(featureimportance_clean, "./Output Data/importance_all_cart_2017.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
